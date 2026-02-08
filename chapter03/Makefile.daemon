@@ -1,0 +1,77 @@
+# Makefile（daemon / UNIT_TESTビルド）
+#
+# 目的：
+# - daemon.c をコンパイルして daemon という実行ファイルを作る
+# - ただし今回は「デーモン化コードの動作確認」をするため、
+#   -DUNIT_TEST を付けて main() を有効化したテスト用バイナリを作る
+#
+# make のアルゴリズム（依存関係ベースの再ビルド）：
+# 1) `make` を実行すると、通常は最初のターゲット（$(PROGRAM)）を作る
+#    → $(PROGRAM) = daemon
+# 2) daemon を作るには $(OBJS) が必要
+#    → $(OBJS) = daemon.o
+# 3) daemon.o が無い／daemon.c より古い場合、
+#    make の暗黙ルールで daemon.c から daemon.o を生成する
+#    例：$(CC) $(CFLAGS) -c daemon.c -o daemon.o
+# 4) daemon.o が揃ったらリンクして daemon を生成する
+#
+# このMakefileのポイント：
+# - CFLAGS に -DUNIT_TEST が入っている
+#   → これによりソース内の #ifdef UNIT_TEST ブロックが有効になる
+#   → テスト用の main() がビルドに含まれる
+# - つまり、これは「本番デーモン」ではなく「デーモン化処理のUNIT_TEST用実行ファイル」を作るMakefileである
+
+# 出力する実行ファイル名
+PROGRAM =       daemon
+
+# リンクするオブジェクトファイル（今回1ファイルだけ）
+OBJS    =       daemon.o
+
+# OBJS から .c を推定して SRCS を作る（daemon.o → daemon.c）
+# 現状このMakefileでは SRCS は未使用だが、将来拡張（例：lint/format）で使える
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイル時オプション
+# -g         : デバッグ情報を付ける（gdbなどで追える）
+# -Wall      : 代表的な警告を有効化（バグの芽を早期に見つける）
+# -DUNIT_TEST: プリプロセッサマクロ UNIT_TEST を定義する
+#              → #ifdef UNIT_TEST ... #endif が有効になり、テスト用 main が含まれる
+#
+# 注意：
+# - これを外すと main が無い（daemonize関数だけ）状態になり、リンク時にエラーになる可能性がある
+#   （テスト用mainが唯一のエントリポイントなら）
+CFLAGS  =       -g -Wall -DUNIT_TEST
+
+# リンク時オプション（今回は空）
+# 例：-L/path/to/lib などが必要ならここに入れる
+LDFLAGS =
+
+# daemon 実行ファイルの生成ルール
+# daemon は daemon.o に依存する
+$(PROGRAM):$(OBJS)
+	# リンク工程：
+	# - $(CC)       : 通常 gcc（環境変数 CC で clang にも差し替え可）
+	# - $(CFLAGS)   : -g はリンクにも意味がある（デバッグ情報を残す）
+	#                -Wall はリンクでは効果は薄いが害は少ない
+	#                -DUNIT_TEST は基本的にコンパイル工程向け（リンクでは意味はない）
+	# - $(LDFLAGS)  : リンク用フラグ（今回は空）
+	# -o $(PROGRAM) : 出力ファイル名 daemon
+	# - $(OBJS)     : 入力オブジェクト daemon.o
+	# - $(LDLIBS)   : 追加ライブラリ（必要なら -lm や -lpthread など）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - daemon.o を作るルールが書かれていないが、make は通常以下を自動適用する：
+#     $(CC) $(CFLAGS) -c daemon.c -o daemon.o
+#
+# 改善案（教材・再現性重視なら明示すると分かりやすい）：
+# daemon.o: daemon.c
+#     $(CC) $(CFLAGS) -c daemon.c -o daemon.o
+#
+# さらに定番の補助ターゲット：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
+#
+# 本番用とテスト用を分けたい場合の方針：
+# - 本番: CFLAGS から -DUNIT_TEST を外す（main無しなら別ファイルでmainを用意）
+# - テスト: 今のように -DUNIT_TEST でテストmainを有効化する
