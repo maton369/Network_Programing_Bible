@@ -1,0 +1,66 @@
+# Makefile（re-exec サーバ用）
+#
+# 目的：
+# - re-exec.c をコンパイルして `re-exec` という実行ファイルを生成する
+# - この `re-exec` は「TCPサーバ + SIGHUPでexecve自己再実行」という教材であり、
+#   ビルド側では特別なライブラリ指定は不要（標準の libc の範囲で完結）である
+#
+# make のアルゴリズム（依存関係グラフに基づく再ビルド）：
+# 1) `make` 実行 → 最初のターゲット `$(PROGRAM)` を作る
+# 2) `$(PROGRAM)` は `$(OBJS)` に依存する
+# 3) `$(OBJS)`（re-exec.o）が無い／re-exec.c より古い場合、
+#    make の暗黙ルールにより .c → .o のコンパイルが走る
+#    典型例：
+#       $(CC) $(CFLAGS) -c re-exec.c -o re-exec.o
+# 4) re-exec.o が揃ったら、リンクして実行ファイル re-exec を生成する
+#
+# このMakefileのポイント：
+# - CFLAGS に -g -Wall を付けている
+#   -g    : gdb 等でデバッグしやすい（シグナル/FD/acceptの挙動確認に有利）
+#   -Wall : 代表的な警告を有効化（ネットワーク/シグナル系はバグが出やすいので有用）
+# - LDFLAGS は空
+#   追加ライブラリ（-lpthread など）が不要な単純構成であることを示す
+
+# 生成する実行ファイル名（ターゲット名）
+PROGRAM =       re-exec
+
+# リンク対象のオブジェクトファイル
+OBJS    =       re-exec.o
+
+# OBJS から対応するソース（.c）を推定して SRCS を作る
+# re-exec.o → re-exec.c
+# 現状 SRCS は使っていないが、将来 “make format / make lint” 等に流用しやすい
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイルオプション
+# -g    : デバッグ情報を付ける（シグナル到来時の挙動を追いやすい）
+# -Wall : 警告を広く出す（潜在的なバグの早期発見）
+CFLAGS  =       -g -Wall
+
+# リンクオプション（必要になったら -L や -Wl,xxx などをここへ）
+LDFLAGS =
+
+# re-exec を生成するルール（リンク工程）
+$(PROGRAM):$(OBJS)
+	# リンク工程の意味：
+	# - $(CC)       : コンパイラ（通常 gcc）。環境変数 CC で clang 等に差し替え可能
+	# - $(CFLAGS)   : -g はリンクにも有効（最終バイナリへデバッグ情報を残す）
+	#                -Wall はリンクでは効果が薄いが害は少ない
+	# - $(LDFLAGS)  : リンク用フラグ（今回は空）
+	# -o $(PROGRAM) : 出力ファイル名を re-exec にする
+	# - $(OBJS)     : 入力オブジェクト（re-exec.o）
+	# - $(LDLIBS)   : 追加ライブラリ指定（必要なら -lm 等を入れる）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - このMakefileには re-exec.o の生成ルールが書かれていないが、
+#   make は標準で次のような暗黙ルールを持つため自動的に動く：
+#     $(CC) $(CFLAGS) -c re-exec.c -o re-exec.o
+#
+# より教材として明示したい場合は以下を追加するとよい：
+# re-exec.o: re-exec.c
+#     $(CC) $(CFLAGS) -c re-exec.c -o re-exec.o
+#
+# よくある追加ターゲット（成果物削除）：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
