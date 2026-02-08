@@ -1,0 +1,74 @@
+# Makefile（最小構成）
+# 目的：
+# - server.c をコンパイルして server という実行ファイルを作る
+# - 依存関係（.c -> .o -> 実行ファイル）を make の仕組みで管理する
+#
+# make のアルゴリズム（ざっくり）：
+# 1) `make` を実行すると、最初のターゲット（ここでは $(PROGRAM)）を作ろうとする
+# 2) $(PROGRAM) を作るには $(OBJS) が必要なので、まず $(OBJS) を最新にする
+# 3) server.o が無い/古い場合、make の「暗黙ルール」により server.c から server.o を作る
+#    例：$(CC) $(CFLAGS) -c server.c -o server.o
+# 4) server.o ができたらリンクして server を作る
+#
+# 重要ポイント：
+# - この Makefile では「.o をどう作るか」のルールを書いていないが、
+#   make には標準の暗黙ルールがあるため、server.c が存在すれば server.o を勝手に作れる
+# - $(CC) は通常 gcc が入る（環境変数 CC を指定すれば差し替え可能）
+# - CFLAGS は主に「コンパイル時オプション」、LDFLAGS は主に「リンク時オプション」
+# - $(LDLIBS) はリンクするライブラリ指定（例：-lm -lpthread など）に使う慣習的変数
+
+# 最終的に生成したい実行ファイル名
+PROGRAM =       server
+
+# リンク対象となるオブジェクトファイル一覧
+# （今回は server.c をコンパイルして server.o を作り、それをリンクして server を作る）
+OBJS    =       server.o
+
+# ソースファイル一覧を、OBJS から自動生成する
+# ここでは server.o -> server.c に置換して SRCS=server.c となる
+# 目的：
+# - ファイル名を二重管理しない（OBJSを変えればSRCSも追従）
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイル時オプション
+# -g     : デバッグ情報を埋め込む（gdb等でデバッグしやすくなる）
+# -Wall  : よくある警告を有効化（バグの早期発見に有効）
+# 追加するなら -Wextra も定番
+CFLAGS  =       -g -Wall
+
+# リンク時オプション
+# 例：
+# -L<dir> : ライブラリ検索パス追加
+# -Wl,... : リンカへオプションを渡す
+# 今回は空（特別なリンク指定なし）
+LDFLAGS =
+
+# ターゲット：$(PROGRAM) を作るルール
+# 形式：
+#   ターゲット: 依存ファイル
+#       コマンド（TABインデント必須）
+#
+# ここでは server を作るために server.o が必要、という依存関係を表す
+$(PROGRAM):$(OBJS)
+	# リンク工程：
+	# - $(CC)        : Cコンパイラ（通常 gcc）
+	# - $(CFLAGS)    : 本来はコンパイル向けだが、リンク時にも付けても動作はする（-gなど）
+	# - $(LDFLAGS)   : リンク時オプション（ここでは空）
+	# -o $(PROGRAM)  : 出力ファイル名を server にする
+	# $(OBJS)        : リンク対象（server.o）
+	# $(LDLIBS)      : 追加でリンクするライブラリ（必要ならここに -lm 等が入る）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足（このMakefileに暗黙に存在する重要ルール）：
+# - server.o を作るルールが書かれていないが、make には暗黙ルールがあるため、
+#   server.c が存在すれば以下のようなコマンドが自動的に使われる：
+#
+#   $(CC) $(CFLAGS) -c server.c -o server.o
+#
+# もし暗黙ルールに頼りたくない場合は、明示的に以下を書くのが分かりやすい：
+# server.o: server.c
+#     $(CC) $(CFLAGS) -c server.c -o server.o
+#
+# さらに便利にするなら clean ターゲットを追加するのが定番：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
