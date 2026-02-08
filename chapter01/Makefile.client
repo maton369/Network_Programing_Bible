@@ -1,0 +1,68 @@
+# Makefile（TCPクライアント用 / 最小構成）
+# 目的：
+# - client.c をコンパイルして client という実行ファイルを作る
+# - 依存関係（.c → .o → 実行ファイル）を make の仕組みで自動管理する
+#
+# make の動き（全体アルゴリズム）：
+# 1) `make` を実行すると、最初のターゲット（ここでは $(PROGRAM)）を作ろうとする
+# 2) $(PROGRAM) を作るには $(OBJS) が必要なので、まず $(OBJS) を最新にする
+# 3) client.o が無い/古い場合、make の「暗黙ルール」により client.c から client.o を作る
+#    代表例：$(CC) $(CFLAGS) -c client.c -o client.o
+# 4) client.o ができたらリンクして client を作る
+#
+# 重要ポイント：
+# - このMakefileでは「.oをどう作るか」を明示していないが、make の暗黙ルールで補われる
+# - $(CC) は通常 gcc（環境変数 CC を変えれば clang 等にも差し替え可）
+# - CFLAGS は「コンパイル時オプション」、LDFLAGS は「リンク時オプション」
+# - $(LDLIBS) はリンクする追加ライブラリ（例：-lm, -lpthread 等）を入れるための慣習変数
+
+# 最終的に生成する実行ファイル名
+PROGRAM =       client
+
+# 実行ファイルを作るのに必要なオブジェクトファイル一覧
+# 今回は client.c → client.o を作り、それをリンクして client を作る
+OBJS    =       client.o
+
+# ソースファイル一覧を OBJS から自動生成する
+# client.o -> client.c に置換され、SRCS=client.c となる
+# （現状SRCSはこのMakefile内で未使用だが、将来拡張で役立つ）
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイル時オプション
+# -g     : デバッグ情報を埋め込む（gdb等でデバッグ可能にする）
+# -Wall  : よくある警告を有効化（バグの早期発見に有効）
+# 追加で -Wextra を入れるのも定番
+CFLAGS  =       -g -Wall
+
+# リンク時オプション（今回は特に指定なしなので空）
+# 例： -L/path/to/lib などを入れる
+LDFLAGS =
+
+# ターゲット：$(PROGRAM) を生成するルール
+# 書式：
+#   ターゲット: 依存物
+#       コマンド（先頭はTAB必須）
+#
+# ここでは「client を作るには client.o が必要」という依存関係を表す
+$(PROGRAM):$(OBJS)
+	# リンク工程（オブジェクトを束ねて実行ファイルを作る）
+	# - $(CC)       : コンパイラ（通常 gcc）
+	# - $(CFLAGS)   : -g などリンクにも意味があるフラグが含まれることがあるため付けている
+	#                （ただし -Wall は本来コンパイル向けで、リンクではあまり意味がない）
+	# - $(LDFLAGS)  : リンク時オプション（今回は空）
+	# -o $(PROGRAM) : 出力実行ファイル名（client）
+	# - $(OBJS)     : リンク入力（client.o）
+	# - $(LDLIBS)   : 追加でリンクしたいライブラリ（必要ならここに -lm 等を入れる）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：このMakefileが暗黙に頼っている「.c→.o」生成（makeの暗黙ルール）
+# - 明示的に書いていないが、一般に make は次のように client.o を作る：
+#     $(CC) $(CFLAGS) -c client.c -o client.o
+#
+# より分かりやすく/環境差を減らしたいなら、明示ルールを書くのが定番：
+# client.o: client.c
+#     $(CC) $(CFLAGS) -c client.c -o client.o
+#
+# さらに便利にするなら clean ターゲットを追加する（成果物を削除できる）：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
