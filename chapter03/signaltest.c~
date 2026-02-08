@@ -1,0 +1,215 @@
+/*
+ * SIGHUP（ハングアップ）を受け取ったら、自分自身を execve で「上書き再実行」するサンプル。
+ *
+ * 目的（何がしたいコードか）：
+ * - 端末切断やサービス再読み込みの合図として使われる SIGHUP を受け取ったとき、
+ *   プロセスを終了させるのではなく「同じプログラムを同じ引数・同じ環境変数で再起動する」。
+ *
+ * 典型ユースケース：
+ * - デーモン/サーバが設定ファイルを読み直すために SIGHUP を受けたら再起動/再読込する
+ * - “プロセスIDは変わるが、同じコマンドラインで再実行される” という動作を確認する教材
+ *
+ * このコードのアルゴリズム（全体の流れ）：
+ * 1) main で argv / envp のアドレスをグローバル変数に保持する（ハンドラから参照したい）
+ * 2) SIGHUP を受けたら sig_hangup_handler が呼ばれる
+ * 3) ハンドラ内で execve(argv[0], argv, envp) を呼び、現在プロセスを新しい実行イメージで上書きする
+ * 4) 普段は 5秒ごとにカウント表示するループで動作し続ける
+ *
+ * 注意（重要：signalハンドラ内でやってはいけないこと）：
+ * - 厳密には、signalハンドラ内で fprintf や perror を呼ぶのは “async-signal-safe” ではないため危険。
+ *   （内部でロックを取ってデッドロックする等の可能性がある）
+ * - execve 自体は async-signal-safe とされることが多いが、I/Oは避けるのが定石。
+ * - 教材として「execveで上書き再実行」の概念を学ぶ目的ならOKだが、
+ *   実務ではハンドラはフラグを立ててメインループでexecする設計にすることが多い。
+ *
+ * 注意（execveの性質）：
+ * - execve が成功すると、このプロセスのメモリ空間は新しいプログラムに置き換えられ、
+ *   以後 execve 呼び出し元へは戻らない。
+ * - PIDは変わらない（forkしていないので同一プロセスの上書き）
+ *   ※ “プロセスを起動し直す” ではなく “同じプロセスを新イメージに差し替える” というイメージ。
+ */
+
+#include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
+
+/* コマンドライン引数、環境変数のアドレス保持用（グローバル）
+ *
+ * なぜ「値」ではなく「アドレス」を保持しているのか：
+ * - ハンドラから main の argv/envp にアクセスしたい
+ * - argv/envp 自体は main の引数として渡されるポインタで、main 内の変数として存在する
+ * - そのため “main の argv 変数のアドレス” を保持すれば、ハンドラ側で (*argv_) として参照できる
+ *
+ * ただし、execve を呼ぶだけなら argv/envp を直接グローバルコピーしてもよい（設計の好み）。
+ */
+int *argc_;
+char ***argv_;
+char ***envp_;
+
+/* SIGHUP のシグナルハンドラ
+ *
+ * sig: シグナル番号（SIGHUPなら通常 1）
+ *
+ * やっていること：
+ * - 受け取ったことを表示（教材向け）
+ * - execve で自分自身（argv[0]）を同じ argv/envp で上書き再実行する
+ *
+ * execve の引数：
+ * - pathname : 実行ファイルのパス（ここでは argv[0]）
+ * - argv     : コマンドライン引数配列（NULL終端が必要）
+ * - envp     : 環境変数配列（NULL終端が必要）
+ */
+void
+sig_hangup_handler(int sig)
+{
+    (void) fprintf(stderr, "sig_hangup_handler(%d)\n", sig);
+
+    /* 自プロセスの上書き再実行（成功したら戻らない）
+     *
+     * (*argv_)[0] は “プログラム名（起動に使ったパス）”。
+     * 例： ./a.out のような相対パスの可能性がある点に注意。
+     */
+    if (execve((*argv_)[0], (*argv_), (*envp_)) == -1) {
+        /* execve が失敗した場合のみここに来る
+         * 例：argv[0] が存在しない、実行権限がない、パスが相対でCWDが変わった、など
+         */
+        perror("execve");
+    }
+}
+
+/* main
+ *
+ * argc/argv/envp を受け取り、SIGHUP ハンドリングを設定して、一定周期で動作する。
+ */
+int
+main(int argc, char *argv[], char *envp[])
+{
+    struct sigaction sa;
+    int i;
+
+    /* コマンドライン引数、環境変数のアドレスをグローバルに保持
+     *
+     * ハンドラから execve を呼ぶ際に argv/envp を参照するため。
+     */
+    argc_ = &argc;
+    argv_ = &argv;
+    envp_ = &envp;
+
+    /* 起動時情報の表示（PID / 引数 / 環境）
+     *
+     * ここで envp を全表示すると量が多くなりやすいが、
+     * “execve 後に同じ env が渡っているか”の確認教材としては分かりやすい。
+     */
+    (void) fprintf(stderr, "start pid=%d\n", getpid());
+    (void) fprintf(stderr, "argc=%d\n", argc);
+
+    for (i = 0; argv[i] != NULL; i++) {
+        (void) fprintf(stderr, "argv[%d]=%s\n", i, argv[i]);
+    }
+    for (i = 0; envp[i] != NULL; i++) {
+        (void) fprintf(stderr, "envp[%d]=%s\n", i, envp[i]);
+    }
+
+    /* sleep() による SIGALRM を解除：移植性のため
+     *
+     * 背景：
+     * - 古いシステム/実装では sleep() が SIGALRM を使うことがあり、
+     *   SIGALRM のハンドリング状況によって sleep の挙動が変わる可能性があった。
+     * - Linuxでは通常そこまで気にしなくても良いが、教材として “明示” している。
+     */
+    (void) signal(SIGALRM, SIG_IGN);
+
+    /* SIGHUP のシグナルハンドラを指定
+     *
+     * このコードは「USE_SIGNAL が定義されているか」で2通りに分岐する：
+     *
+     * A) USE_SIGNAL 定義時：
+     *    - 古典的な signal() を使ってハンドラを設定
+     *    - その後、sigaction(NULL) で現在設定を取得してフラグ表示
+     *
+     * B) USE_SIGNAL 未定義時（デフォルト）：
+     *    - sigaction() で明示的にハンドラとフラグを設定
+     *    - さらに現在設定を取得し、フラグを表示
+     *
+     * ここで「signal と sigaction の違い」を観察できるのが教材的ポイント。
+     */
+#ifdef USE_SIGNAL
+    /* signal() で SIGHUP を設定（簡易だが挙動がOS/実装依存になりやすい） */
+    (void) signal(SIGHUP, sig_hangup_handler);
+
+    /* 現状の sigaction 設定を取得して表示（NULLを渡すと “取得のみ”） */
+    (void) sigaction(SIGHUP, (struct sigaction *) NULL, &sa);
+
+    /* 各フラグの意味（ざっくり）：
+     * - SA_ONSTACK  : 代替シグナルスタック上でハンドラを動かす
+     * - SA_RESETHAND: ハンドラ実行後にデフォルトへ戻す
+     * - SA_NODEFER  : ハンドラ実行中も同じシグナルをブロックしない（再入し得る）
+     * - SA_RESTART  : 一部の中断されたシステムコールを自動再開
+     * - SA_SIGINFO  : sa_sigaction（詳細情報付き）を使う
+     */
+    (void) fprintf(stderr, "SA_ONSTACK=%d\n",   (sa.sa_flags & SA_ONSTACK)  ? 1 : 0);
+    (void) fprintf(stderr, "SA_RESETHAND=%d\n", (sa.sa_flags & SA_RESETHAND)? 1 : 0);
+    (void) fprintf(stderr, "SA_NODEFER=%d\n",   (sa.sa_flags & SA_NODEFER)  ? 1 : 0);
+    (void) fprintf(stderr, "SA_RESTART=%d\n",   (sa.sa_flags & SA_RESTART)  ? 1 : 0);
+    (void) fprintf(stderr, "SA_SIGINFO=%d\n",   (sa.sa_flags & SA_SIGINFO)  ? 1 : 0);
+
+    (void) fprintf(stderr, "signal():end\n");
+#else
+    /* 現状の設定を取得（初期値の参考） */
+    (void) sigaction(SIGHUP, (struct sigaction *) NULL, &sa);
+
+    /* sigaction でハンドラを設定 */
+    sa.sa_handler = sig_hangup_handler;
+
+    /* SA_NODEFER：
+     * - 通常、ハンドラ実行中は “同じシグナル” がブロックされる
+     * - SA_NODEFER を立てるとブロックされず、同じ SIGHUP が連続するとハンドラが再入し得る
+     *
+     * この教材では “フラグの効果を観察する” 意図があると考えられるが、
+     * 実務では再入は危険なので、特別な理由がなければ付けないことが多い。
+     */
+    sa.sa_flags = SA_NODEFER;
+
+    /* 設定適用 */
+    (void) sigaction(SIGHUP, &sa, (struct sigaction *) NULL);
+
+    /* 現状の表示 */
+    (void) sigaction(SIGHUP, (struct sigaction *) NULL, &sa);
+    (void) fprintf(stderr, "sigaction():end\n");
+
+    (void) fprintf(stderr, "SA_ONSTACK=%d\n",   (sa.sa_flags & SA_ONSTACK)  ? 1 : 0);
+    (void) fprintf(stderr, "SA_RESETHAND=%d\n", (sa.sa_flags & SA_RESETHAND)? 1 : 0);
+    (void) fprintf(stderr, "SA_NODEFER=%d\n",   (sa.sa_flags & SA_NODEFER)  ? 1 : 0);
+    (void) fprintf(stderr, "SA_RESTART=%d\n",   (sa.sa_flags & SA_RESTART)  ? 1 : 0);
+    (void) fprintf(stderr, "SA_SIGINFO=%d\n",   (sa.sa_flags & SA_SIGINFO)  ? 1 : 0);
+#endif
+
+    /* 5秒おきにカウント表示（常駐動作の代わりの疑似ワークロード）
+     *
+     * このループが動いている最中に：
+     * - 別端末から `kill -HUP <pid>` を送る
+     * - または端末切断によりSIGHUPが来る状況を作る
+     * と、ハンドラが動いて execve され、表示が “start...” から再度出直すはず。
+     */
+    for (i = 0;; i++) {
+        (void) fprintf(stderr, "count=%d\n", i);
+        sleep(5);
+    }
+}
+
+/*
+ * 学習メモ（安全な設計にするなら）
+ *
+ * 1) ハンドラ内で stdio を使わない
+ * - fprintf/perror は async-signal-safe ではない
+ * - ハンドラでは volatile sig_atomic_t フラグを立てるだけにして、
+ *   メインループ側で execve を実行する方が安全
+ *
+ * 2) SA_NODEFER は基本付けない
+ * - SIGHUPが連打されるとハンドラ再入の危険がある
+ * - “設定再読み込み”のような用途なら、再入防止の方が望ましい
+ *
+ * 3) argv[0] が相対パス問題
+ * - execve((*argv_)[0],...) は argv[0] が相対パスだと CWD に依存する
+ * - 実務では /proc/self/exe を使う、あるいは絶対パスを保持する設計が多い
+ */
