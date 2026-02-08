@@ -1,0 +1,3 @@
+#!/bin/BASH
+
+tcpdump -X -S -t -n -i lo port 55555
