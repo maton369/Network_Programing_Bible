@@ -1,0 +1,66 @@
+# Makefile（server1 用 / bind先アドレス指定版サーバをビルド）
+#
+# 目的：
+# - server1.c をコンパイルして server1 という実行ファイルを生成する
+# - make の依存関係解決（古いものだけ作り直す）を利用して、ビルドを自動化する
+#
+# make の全体アルゴリズム（何が起きるか）：
+# 1) `make` を実行すると、通常は Makefile の最初のターゲットをビルドする
+#    → このMakefileでは最初にルール定義されるのは $(PROGRAM)（= server1）
+# 2) server1 を作るには server1.o が必要（依存関係）
+# 3) server1.o が存在しない／server1.c より古い場合：
+#    make の暗黙ルールにより server1.c をコンパイルして server1.o を作る
+#    典型例：$(CC) $(CFLAGS) -c server1.c -o server1.o
+# 4) server1.o が用意できたら、リンク工程で server1 を作る
+#
+# 重要ポイント：
+# - このMakefileは「.o の作り方」を明示していないが、make の標準暗黙ルールで成立する
+# - $(CC) は通常 gcc（環境変数 CC で clang 等に差し替え可能）
+# - CFLAGS はコンパイル用、LDFLAGS はリンク用、LDLIBS は追加ライブラリ用という慣習
+# - 今回の server1 は追加ライブラリ不要（pthread等を使っていない）なので LDLIBS は空でよい
+
+# 生成する実行ファイル名
+PROGRAM =       server1
+
+# リンク対象のオブジェクトファイル一覧
+# server1.c → server1.o を作り、server1.o をリンクして server1 を作る
+OBJS    =       server1.o
+
+# OBJS から対応する .c を生成（server1.o → server1.c）
+# 現状このMakefileでは SRCS は未使用だが、将来の拡張（配布/静的解析など）で役立つ
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイル時オプション
+# -g    : デバッグ情報付与（gdb 等でスタックトレースが追いやすい）
+# -Wall : 代表的な警告を有効化（バグ早期発見）
+# 追加で -Wextra を入れるのも定番
+CFLAGS  =       -g -Wall
+
+# リンク時オプション（今回は特に指定なし）
+# 例：-L/path/to/lib などを入れる
+LDFLAGS =
+
+# ターゲット：$(PROGRAM) を生成するルール
+# server1 は server1.o に依存する（server1.o が最新でないとリンクし直す）
+$(PROGRAM):$(OBJS)
+	# リンク工程：
+	# - $(CC)       : 通常 gcc
+	# - $(CFLAGS)   : -g はリンクでも意味がある（デバッグ情報を最終成果物に残す）
+	#                -Wall はリンクでは効果が薄いが害も少ない
+	# - $(LDFLAGS)  : リンク用フラグ（今回は空）
+	# -o $(PROGRAM) : 出力ファイル名（server1）
+	# - $(OBJS)     : 入力オブジェクト（server1.o）
+	# - $(LDLIBS)   : 追加ライブラリ（必要なら -lm, -lpthread など）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - server1.o の生成ルールを書いていないが、通常 make が以下を自動適用する：
+#     $(CC) $(CFLAGS) -c server1.c -o server1.o
+#
+# もし暗黙ルールに頼らず明示したい場合（教材/チーム開発で分かりやすい）：
+# server1.o: server1.c
+#     $(CC) $(CFLAGS) -c server1.c -o server1.o
+#
+# さらに定番の拡張（ビルド成果物の削除）：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
