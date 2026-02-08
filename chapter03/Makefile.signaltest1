@@ -1,0 +1,60 @@
+# Makefile（signaltest1 用）
+#
+# 目的：
+# - signaltest1.c をコンパイルして `signaltest1` という実行ファイルを作る
+# - signaltest1.c は SIGINT（Ctrl+C）を受け取るまでループする教材であり、
+#   特別な外部ライブラリは不要（標準Cライブラリ + POSIX の範囲で完結）である
+#
+# make のビルドアルゴリズム（依存関係に基づく最小再ビルド）：
+# 1) `make` を実行すると、最初のターゲット `$(PROGRAM)` を生成しようとする
+#    → PROGRAM = signaltest1
+# 2) signaltest1 は `$(OBJS)` に依存する
+#    → OBJS = signaltest1.o
+# 3) signaltest1.o が存在しない、または signaltest1.c より古い場合、
+#    make の暗黙ルール（標準ルール）により .c → .o のコンパイルが行われる
+#    典型例：
+#       $(CC) $(CFLAGS) -c signaltest1.c -o signaltest1.o
+# 4) signaltest1.o が揃ったら、リンク工程で実行ファイル signaltest1 を生成する
+#
+# このMakefileの狙い（教材として）：
+# - -g を付けているので gdb でシグナル受信やハンドラの動作を追いやすい
+# - -Wall を付けているのでシグナル周りのよくあるミスを警告で拾いやすい
+# - LDFLAGS/LDLIBS を空にしており “余計な依存がない最小構成” であることが分かる
+
+# 生成する実行ファイル名（make の主要ターゲット）
+PROGRAM =       signaltest1
+
+# リンク対象のオブジェクトファイル
+OBJS    =       signaltest1.o
+
+# OBJS から対応するソース (.c) を推定して SRCS を構築
+# signaltest1.o → signaltest1.c
+# 現状 SRCS は直接使っていないが、将来複数ファイル化したときに便利
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイルオプション
+# -g    : デバッグ情報（シグナル到来時の挙動解析に便利）
+# -Wall : 代表的な警告を有効化（教材では警告を潰す訓練にもなる）
+CFLAGS  =       -g -Wall
+
+# リンクオプション（必要になったら -L や -Wl,xxx 等を追加）
+LDFLAGS =
+
+# リンク工程：signaltest1 を生成する
+$(PROGRAM):$(OBJS)
+	# $(CC)      : コンパイラ（通常 gcc）。CC=clang などで差し替え可能
+	# $(CFLAGS)  : -g はリンク後のバイナリにもデバッグ情報を残す
+	# $(LDFLAGS) : リンク用フラグ（今回は空）
+	# -o         : 出力ファイル名
+	# $(OBJS)    : 入力オブジェクト
+	# $(LDLIBS)  : 追加ライブラリ（必要なら -lm 等）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - このMakefileには signaltest1.o の生成ルールが書かれていないが、
+#   make は標準で次のような暗黙ルールを持つため自動的に動く：
+#     $(CC) $(CFLAGS) -c signaltest1.c -o signaltest1.o
+#
+# よくある追加ターゲット（成果物削除）：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
