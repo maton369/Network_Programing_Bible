@@ -1,0 +1,77 @@
+# Makefile（signaltest / USE_SIGNAL ビルド）
+#
+# 目的：
+# - signaltest.c をコンパイルして signaltest という実行ファイルを生成する
+# - ただしこのプログラムは「SIGHUPハンドラの設定方法」を
+#   - signal() を使う版
+#   - sigaction() を使う版
+#   の2系統で切り替えられるように書かれている。
+# - このMakefileでは -DUSE_SIGNAL を付けることで「signal() 版」を有効化してビルドする。
+#
+# make の全体アルゴリズム（依存関係に基づくビルド）：
+# 1) `make` を実行すると、最初のターゲット（通常 $(PROGRAM)）を作ろうとする
+#    → $(PROGRAM) = signaltest
+# 2) signaltest を作るには $(OBJS) が必要
+#    → $(OBJS) = signaltest.o
+# 3) signaltest.o が無い／signaltest.c より古い場合、
+#    make の暗黙ルールで signaltest.c から signaltest.o を生成する
+#    典型例：$(CC) $(CFLAGS) -c signaltest.c -o signaltest.o
+# 4) signaltest.o が揃ったらリンクして signaltest を生成する
+#
+# このMakefileのポイント（アルゴリズム上の意図）：
+# - CFLAGS に -DUSE_SIGNAL が入っている
+#   → プリプロセッサで USE_SIGNAL マクロが定義される
+#   → ソース側の
+#        #ifdef USE_SIGNAL
+#           signal(SIGHUP, ...)
+#        #else
+#           sigaction(SIGHUP, ...)
+#        #endif
+#     が “signal() 側” に分岐する
+# - つまり、同じソースから「signal()版」と「sigaction()版」を切り替えて比較できる設計になっている
+# - 警告（-Wall）とデバッグ（-g）を付けているので、挙動確認や解析に向く
+
+# 生成する実行ファイル名
+PROGRAM =       signaltest
+
+# リンク対象のオブジェクトファイル
+OBJS    =       signaltest.o
+
+# OBJS から対応する .c を推定して SRCS を作る（signaltest.o → signaltest.c）
+# 現状 SRCS は使っていないが、将来的な拡張（例：format/lint）に便利
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイル時オプション
+# -g         : デバッグ情報を付与（gdb等で追える）
+# -Wall      : 代表的な警告を有効化
+# -DUSE_SIGNAL: プリプロセッサマクロ USE_SIGNAL を定義
+#               → signal() を使う分岐を有効化する（sigaction版と比較するため）
+CFLAGS  =       -g -Wall -DUSE_SIGNAL
+
+# リンク時オプション（必要なら -L 等）
+LDFLAGS =
+
+# signaltest 実行ファイルのリンクルール
+$(PROGRAM):$(OBJS)
+	# リンク工程：
+	# - $(CC)       : 通常 gcc（環境変数 CC で差し替え可能）
+	# - $(CFLAGS)   : -g は最終バイナリにデバッグ情報を残すのでリンクにも意味がある
+	#                -Wall はリンクでは効果が薄い
+	#                -DUSE_SIGNAL はプリプロセッサ用なのでリンクでは実質意味がない（が害もない）
+	# - $(LDFLAGS)  : リンク用フラグ（今回は空）
+	# -o $(PROGRAM) : 出力ファイル名 signaltest
+	# - $(OBJS)     : 入力オブジェクト signaltest.o
+	# - $(LDLIBS)   : 追加ライブラリ（必要なら -lm 等）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - 明示していないが、make は通常以下のように .o を生成する：
+#     $(CC) $(CFLAGS) -c signaltest.c -o signaltest.o
+#
+# 使い分けのメモ（このMakefileの実験意図）：
+# - signal() 版を作りたい → 今のまま（-DUSE_SIGNAL）
+# - sigaction() 版を作りたい → CFLAGS から -DUSE_SIGNAL を外す（または別ターゲットを作る）
+#
+# 追加の定番（成果物削除）：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
