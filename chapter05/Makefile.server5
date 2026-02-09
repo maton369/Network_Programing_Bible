@@ -1,0 +1,59 @@
+# Makefile（server5 用 / fork + SIGCHLD 回収サーバ）
+#
+# 目的：
+# - server5.c をコンパイルして `server5` 実行ファイルを生成する
+# - server5 は「accept した接続ごとに fork() で子プロセスを作り、子が送受信を担当」
+#   する “プロセス並列型” TCP サーバである
+# - 親プロセスは accept を回し続け、子の終了は SIGCHLD + wait()/waitpid() で回収する
+#
+# make のアルゴリズム（依存関係によるビルド手順）：
+# 1) `make` を実行すると、最初のターゲット `$(PROGRAM)` を作ろうとする
+#    → PROGRAM = server5
+# 2) server5 は `$(OBJS)` に依存する
+#    → OBJS = server5.o
+# 3) server5.o が無い／server5.c より古い場合、make の暗黙ルールで .c → .o を生成する
+#    典型的には以下が実行される（Makefileに明示しなくても動く）：
+#      $(CC) $(CFLAGS) -c server5.c -o server5.o
+# 4) server5.o ができたら、この Makefile のリンクルールで server5 を生成する：
+#      $(CC) $(CFLAGS) $(LDFLAGS) -o server5 server5.o $(LDLIBS)
+#
+# CFLAGS の意味：
+# - -g    : デバッグ情報付与（fork 後の挙動や SIGCHLD 周りを gdb で追いやすい）
+# - -Wall : 警告を多く出す（未使用変数、型、境界などのミスを早めに検出できる）
+#
+# LDFLAGS / LDLIBS について：
+# - 本プログラムは基本的に追加ライブラリ不要（fork/accept/wait は libc 経由）
+# - もし将来的に pthread を使う等が出てきたら LDLIBS に -lpthread を足す、など
+
+# 生成する実行ファイル名（最終成果物）
+PROGRAM =       server5
+
+# リンクに使うオブジェクトファイル（複数ファイル化したらここに追加していく）
+OBJS    =       server5.o
+
+# OBJS から対応する .c を機械的に列挙（現状は直接使っていないが、拡張時に便利）
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイル時のオプション
+CFLAGS  =       -g -Wall
+
+# リンク時オプション（例：-L<dir> や -Wl,<option> を入れる場所）
+LDFLAGS =
+
+# リンク工程：server5（実行ファイル）を生成
+$(PROGRAM):$(OBJS)
+	# $(CC)     : Cコンパイラ（通常 gcc）。環境変数 CC で差し替え可能
+	# $(CFLAGS) : ここに -g -Wall を付けている（デバッグしやすい）
+	# $(LDFLAGS): リンク時フラグ（空）
+	# -o        : 出力ファイル名
+	# $(OBJS)   : 入力オブジェクト
+	# $(LDLIBS) : 追加ライブラリ（必要なら -lm など）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - 明示的に書かなくても、make の標準ルールが以下を実行してくれる：
+#     $(CC) $(CFLAGS) -c server5.c -o server5.o
+#
+# よく追加するお掃除ターゲット（生成物削除）例：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
