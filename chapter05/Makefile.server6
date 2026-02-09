@@ -1,0 +1,56 @@
+# Makefile（server6）についての詳細コメント付き解説
+#
+# 目的：
+# - server6.c をコンパイルして server6 という実行ファイルを作る。
+# - server6 は pthread（POSIXスレッド）を使っているため、
+#   リンク時に pthread ライブラリを追加する必要がある。
+#
+# 重要ポイント：
+# - コンパイル（.c -> .o）段階：CFLAGS が効く（-g, -Wall など）
+# - リンク（.o -> 実行ファイル）段階：LDFLAGS/LDLIBS が効く（-lpthread など）
+#
+# 注意（実務寄り）：
+# - Linuxでは `-lpthread` より `-pthread` を使うのが一般に推奨されることが多い。
+#   `-pthread` は「リンクだけでなくコンパイルにもスレッド用の設定を入れる」意味合いがあり、
+#   実装依存の最適な指定になることがある。
+#   ただし、この教材Makefileは「リンクに pthread を足す」という意図を見せるために
+#   `-lpthread` を採用していると考えられる。
+#
+# 変数定義（= 代入）
+# - PROGRAM : 生成する実行ファイル名
+# - OBJS    : リンク対象のオブジェクトファイル（.o）
+# - SRCS    : OBJS から逆算したソースファイル名（.c）
+# - CFLAGS  : コンパイル時のフラグ
+# - LDFLAGS : リンク時のフラグ（ライブラリリンク指定など）
+#
+# アルゴリズム（Makeの動き）：
+# 1) `make` すると最初のターゲット（ここでは $(PROGRAM)）を作ろうとする
+# 2) $(PROGRAM) は $(OBJS) に依存しているので、まず server6.o が必要になる
+# 3) server6.o が無ければ、暗黙ルール（built-in rule）で
+#    `$(CC) $(CFLAGS) -c server6.c -o server6.o` が実行される（環境により）
+# 4) server6.o ができたら、最後にリンクコマンドで server6 を作る
+#
+# 実行例：
+# - ビルド： make
+# - クリーン： make clean（このMakefileには未定義なので必要なら追加）
+
+PROGRAM =       server6              # 最終的に作る実行ファイル名
+OBJS    =       server6.o            # リンクするオブジェクト（この例では1つ）
+SRCS    =       $(OBJS:%.o=%.c)      # OBJS の .o を .c に置換して SRCS を作る（server6.c）
+CFLAGS  =       -g -Wall             # -g: デバッグ情報付与, -Wall: 警告を多めに出す
+LDFLAGS =       -lpthread            # リンク時に pthread ライブラリを追加（スレッドAPIが必要）
+
+# ターゲット： server6
+# 依存： server6.o
+#
+# 意味：
+# - server6 を作るには server6.o が必要。
+# - server6.o が更新されたら（または無ければ）リンクし直す。
+$(PROGRAM):$(OBJS)
+	# $(CC)      : Cコンパイラ（通常 gcc が入る。環境変数 CC があればそれが優先）
+	# $(CFLAGS)  : コンパイル用フラグだが、リンクコマンドに混ぜても害は少ない（-g はリンクにも効く）
+	# $(LDFLAGS) : リンク用フラグ（ここでは -lpthread が重要）
+	# -o $(PROGRAM) : 出力ファイル名を server6 にする
+	# $(OBJS)    : 入力となるオブジェクトファイル（server6.o）
+	# $(LDLIBS)  : 追加ライブラリ（必要なら外から `make LDLIBS=...` で渡せる）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
