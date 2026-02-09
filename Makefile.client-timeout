@@ -1,0 +1,65 @@
+# Makefile（client-timeout 用）
+#
+# 目的：
+# - client-timeout.c をコンパイルして `client-timeout` という実行ファイルを生成する
+# - このプログラムは
+#   - fcntl(O_NONBLOCK) + select() + getsockopt(SO_ERROR) により connect タイムアウトを実現し
+#   - 接続後は select() で「ソケット」と「標準入力」を多重化する
+#   という教材である
+#
+# make のアルゴリズム（依存関係に基づく最小再ビルド）：
+# 1) `make` を実行すると、最初のターゲット `$(PROGRAM)` を作ろうとする
+#    → PROGRAM = client-timeout
+# 2) client-timeout は `$(OBJS)` に依存する
+#    → OBJS = client-timeout.o
+# 3) client-timeout.o が存在しない／client-timeout.c より古い場合、
+#    make の暗黙ルール（標準ルール）で .c → .o のコンパイルが走る
+#    典型例：
+#       $(CC) $(CFLAGS) -c client-timeout.c -o client-timeout.o
+# 4) client-timeout.o が揃ったら、リンク工程で実行ファイル client-timeout を生成する
+#
+# このMakefileのポイント：
+# - CFLAGS = -g -Wall
+#   -g    : デバッグ情報を付与（connect タイムアウト挙動や errno の追跡に便利）
+#   -Wall : 警告を出す（fd_set/size_t/ssize_t、境界などのミスを拾いやすい）
+# - LDFLAGS/LDLIBS は空
+#   → pthread などの追加ライブラリなしで動く最小構成
+#
+# 注意：
+# - ファイル名にハイフン（client-timeout.c）が入っていても gcc/make 的には問題ない
+#   ただし、環境によってはターゲット名や変数展開時の見た目が読みづらいので、
+#   実務では client_timeout.c のようにアンダースコアにする流派もある
+
+# 生成する実行ファイル名（ターゲット）
+PROGRAM =       client-timeout
+
+# リンク対象のオブジェクト
+OBJS    =       client-timeout.o
+
+# OBJS から対応するソース (.c) を推定（現状は未使用だが拡張しやすい）
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイルオプション
+CFLAGS  =       -g -Wall
+
+# リンクオプション（必要なら -L, -Wl, などを追加）
+LDFLAGS =
+
+# リンク工程：client-timeout を生成
+$(PROGRAM):$(OBJS)
+	# $(CC)      : コンパイラ（通常 gcc）。環境変数 CC で clang 等に差し替え可能
+	# $(CFLAGS)  : -g は最終バイナリにもデバッグ情報を残す（gdb で追える）
+	# $(LDFLAGS) : リンク用追加フラグ（今回は空）
+	# -o         : 出力ファイル名を $(PROGRAM) にする
+	# $(OBJS)    : 入力オブジェクト（client-timeout.o）
+	# $(LDLIBS)  : 追加ライブラリ（必要なら -lm 等）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - client-timeout.o を作るルールは書いていないが、
+#   make は標準で次を暗黙的に実行できる：
+#     $(CC) $(CFLAGS) -c client-timeout.c -o client-timeout.o
+#
+# よくある追加ターゲット：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
