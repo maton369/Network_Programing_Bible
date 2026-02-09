@@ -1,0 +1,68 @@
+# Makefile（server8 用）
+#
+# この Makefile は「pthread を使うマルチスレッド TCP サーバ（server8.c）」を
+# ビルドするための最小構成である。
+#
+# ─────────────────────────────────────────────────────────────
+# ビルドの流れ（アルゴリズム的な全体像）
+#
+#   1) server8.c をコンパイルして server8.o を作る
+#        $(CC) $(CFLAGS) -c server8.c -o server8.o
+#
+#   2) server8.o をリンクして 実行ファイル server8 を作る
+#        $(CC) $(CFLAGS) $(LDFLAGS) -o server8 server8.o $(LDLIBS)
+#
+# ポイントはリンク時に -lpthread を付けること。
+# pthread_create / pthread_mutex_lock などは pthread ライブラリにあるため、
+# これを付けないと「undefined reference」系のリンクエラーになる。
+#
+# なお、環境によっては「-pthread」を使うのが推奨される場合がある（GCC/Clang）。
+# -pthread はコンパイル時・リンク時の両方に必要なフラグをまとめて設定してくれる。
+# ただし本 Makefile では提示コードに合わせて LDFLAGS に -lpthread を置いている。
+#
+# ─────────────────────────────────────────────────────────────
+# 変数定義
+#
+# PROGRAM : 最終的に生成する実行ファイル名
+# OBJS    : リンクに使うオブジェクトファイル一覧
+# SRCS    : OBJS から逆算したソース一覧（server8.o → server8.c）
+# CFLAGS  : コンパイル時のフラグ（デバッグ情報 -g、警告 -Wall）
+# LDFLAGS : リンク時のフラグ（pthread ライブラリをリンク）
+#
+PROGRAM =       server8
+OBJS    =       server8.o
+SRCS    =       $(OBJS:%.o=%.c)
+CFLAGS  =       -g -Wall
+LDFLAGS =       -lpthread
+
+# ─────────────────────────────────────────────────────────────
+# リンク規則（実行ファイルを作る）
+#
+# ターゲット: server8（= $(PROGRAM)）
+# 依存物     : server8.o（= $(OBJS)）
+#
+# 「server8.o が更新されたら server8 を作り直す」ことを意味する。
+#
+# 実行コマンド:
+#   $(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+#
+# ここでのポイント：
+#   - $(LDFLAGS) に -lpthread が入っているため、pthread 関連のシンボル解決ができる。
+#   - $(LDLIBS) は追加ライブラリ用の予約枠（必要なら -lm などを外から追加できる）。
+#
+$(PROGRAM):$(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# ─────────────────────────────────────────────────────────────
+# 参考：よくある追加（この Makefile には未記載だが便利）
+#
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
+#
+# これを入れるとビルド生成物を一括削除できる。
+#
+# また pthread をより一般的に書くなら、以下も候補：
+#   CFLAGS  += -pthread
+#   LDFLAGS += -pthread
+# （-lpthread ではなく -pthread を使う）
+#
