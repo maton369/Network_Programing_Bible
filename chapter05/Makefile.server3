@@ -1,0 +1,63 @@
+# Makefile（server3 用 / poll() 多重化サーバ）
+#
+# 目的：
+# - server3.c をコンパイルして `server3` 実行ファイルを生成する
+# - server3 は poll() を使って
+#   - listen ソケット（新規接続受付）
+#   - accept 済みの接続ソケット群（既存クライアント）
+#   を同時に監視し、1プロセス/1スレッドで多重化する TCP サーバである
+#
+# make のアルゴリズム（依存関係による自動ビルド）：
+# 1) `make` を実行すると、最初のターゲット `$(PROGRAM)` を作る
+#    → PROGRAM = server3
+# 2) server3 は `$(OBJS)` に依存する
+#    → OBJS = server3.o
+# 3) server3.o が無い／server3.c より古い場合、
+#    make の暗黙ルール（標準ルール）で .c → .o のコンパイルが実行される
+#    典型例：
+#      $(CC) $(CFLAGS) -c server3.c -o server3.o
+# 4) server3.o ができたら、この Makefile のリンクルールで server3 を生成する
+#
+# ビルドフラグ：
+# - CFLAGS = -g -Wall
+#   -g    : デバッグ情報を埋め込む（poll の revents / accept / recv の追跡に便利）
+#   -Wall : 警告を多く出す（pollfd 配列・サイズ・型の注意点を早期に検出）
+#
+# 補足：
+# - poll() は通常 libc に含まれるため、追加のライブラリ（-lxxx）は不要なことが多い
+# - LDFLAGS / LDLIBS は拡張用に空で置いている
+
+# 生成する実行ファイル名（最終成果物）
+PROGRAM =       server3
+
+# リンクに使うオブジェクトファイル
+OBJS    =       server3.o
+
+# OBJS から対応するソースファイル名を機械的に作る（o→c 変換）
+# 現状 SRCS は未使用だが、将来複数ファイルに分割した時に便利
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイル時のフラグ
+CFLAGS  =       -g -Wall
+
+# リンク時のフラグ（-L などを追加するならここ）
+LDFLAGS =
+
+# リンク工程：server3（実行ファイル）を生成
+$(PROGRAM):$(OBJS)
+	# $(CC)     : コンパイラ（通常 gcc）。環境変数 CC=clang などで差し替え可能
+	# $(CFLAGS) : -g は最終バイナリにもデバッグ情報を残す
+	# $(LDFLAGS): リンク時の追加オプション（今回は空）
+	# -o        : 出力ファイル名（server3）
+	# $(OBJS)   : 入力オブジェクト（server3.o）
+	# $(LDLIBS) : 追加ライブラリ（必要なら -lm など）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - server3.o を作る明示ルールが無くても、make の標準暗黙ルールで作られる
+#   典型的には次のコマンドが内部的に走る：
+#     $(CC) $(CFLAGS) -c server3.c -o server3.o
+#
+# よく追加するターゲット例（成果物の削除）：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
