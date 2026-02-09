@@ -1,0 +1,60 @@
+# Makefile（server2 用）
+#
+# 目的：
+# - server2.c をコンパイルして `server2` という実行ファイルを生成する
+# - server2 は select() による I/O 多重化で複数クライアント接続を扱う TCP サーバである
+#   （fork/thread を使わず、1プロセス/1スレッドでイベントループを回す）
+#
+# make のアルゴリズム（依存関係に基づく最小再ビルド）：
+# 1) `make` 実行時、最初のターゲット `$(PROGRAM)` を作ろうとする
+#    → PROGRAM = server2
+# 2) server2 は `$(OBJS)` に依存する
+#    → OBJS = server2.o
+# 3) server2.o が無い／server2.c より古い場合、
+#    make の暗黙ルール（標準ルール）により .c → .o のコンパイルが走る
+#    典型例：
+#       $(CC) $(CFLAGS) -c server2.c -o server2.o
+# 4) server2.o ができたら、この Makefile に書かれたリンクルールで server2 を生成する
+#
+# ビルド設定のポイント：
+# - CFLAGS = -g -Wall
+#   -g    : デバッグ情報付与（select/accept/recv の挙動追跡、gdb で便利）
+#   -Wall : 警告を最大限出す（fd_set/ssize_t/size_t、境界などのミスを拾いやすい）
+# - LDFLAGS/LDLIBS は空
+#   → 追加ライブラリなしの最小構成（標準のソケットAPIのみで完結）
+
+# 生成する実行ファイル名（make の主要ターゲット）
+PROGRAM =       server2
+
+# リンク対象のオブジェクトファイル
+OBJS    =       server2.o
+
+# OBJS から対応するソース (.c) を推定して SRCS を構築
+# server2.o → server2.c
+# 現状 SRCS は直接使っていないが、ファイル分割した時に役立つ
+SRCS    =       $(OBJS:%.o=%.c)
+
+# コンパイルフラグ
+CFLAGS  =       -g -Wall
+
+# リンクフラグ（必要になれば -L や -Wl,xxx などを追加）
+LDFLAGS =
+
+# リンク工程：server2 を生成
+$(PROGRAM):$(OBJS)
+	# $(CC)      : コンパイラ（通常 gcc）。CC=clang などで差し替え可能
+	# $(CFLAGS)  : -g は最終バイナリにもデバッグ情報を残す
+	# $(LDFLAGS) : リンク時の追加オプション（今回は空）
+	# -o         : 出力ファイル名（server2）
+	# $(OBJS)    : 入力オブジェクト（server2.o）
+	# $(LDLIBS)  : 追加ライブラリ（必要なら -lm 等）
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
+
+# 補足：暗黙ルール（.c → .o）
+# - server2.o の生成ルールを明示していないが、
+#   make の標準暗黙ルールにより自動的に次の形でコンパイルされる：
+#     $(CC) $(CFLAGS) -c server2.c -o server2.o
+#
+# よくある追加ターゲット（成果物削除）：
+# clean:
+#     rm -f $(PROGRAM) $(OBJS)
