@@ -1,0 +1,35 @@
+# server9 用 Makefile（コメント付き）
+#
+# この Makefile は server9.c をビルドして実行ファイル server9 を作るだけの最小構成である。
+# server9 は pthread（スレッド）を使うため、リンク時に -lpthread を付けている点が重要である。
+#
+# ビルドの流れ（アルゴリズム的な見方）
+# ---------------------------------
+# 1) SRCS（= server9.c）をコンパイルして OBJS（= server9.o）を作る
+# 2) OBJS をリンクして PROGRAM（= server9）を作る
+#
+# ここで注意すべきポイント
+# ------------------------
+# - CFLAGS は「コンパイル時」のオプション（デバッグ情報、警告など）
+# - LDFLAGS は「リンク時」のオプション（ライブラリリンクなど）
+# - -lpthread は pthread ライブラリをリンクするために必要
+#   ※ glibc 環境では -pthread を使うのが一般的だが、この教材では -lpthread を明示している
+#
+# 依存関係の読み方
+# ---------------
+# $(PROGRAM): $(OBJS)
+#   → server9 は server9.o が更新されたら再リンクする、という意味
+
+PROGRAM =       server9                 # 生成する実行ファイル名
+OBJS    =       server9.o               # リンク対象のオブジェクトファイル
+SRCS    =       $(OBJS:%.o=%.c)         # server9.o -> server9.c へ自動変換
+CFLAGS  =       -g -Wall                # -g: デバッグ情報付与, -Wall: 警告を広めに出す
+LDFLAGS =       -lpthread               # pthread を使うのでリンク時に必要
+
+# リンク規則：
+# - $(CC) は make が暗黙に使う C コンパイラ（通常 gcc）
+# - $(CFLAGS) はここではリンクにも流用している（-g はリンクにも意味がある）
+# - $(LDFLAGS) に pthread ライブラリを指定
+# - $(LDLIBS) は make の慣習的な追加ライブラリ変数（空でもOK）
+$(PROGRAM):$(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM) $(OBJS) $(LDLIBS)
